@@ -1,27 +1,27 @@
 services:
   postgres:
     image: postgres:16
-    container_name: lab2_db
+    container_name: lab_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER}
+      POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
       - "5432:5432"
     volumes:
-      - lab2_postgres:/var/lib/postgresql/data
+      - lab_postgres:/var/lib/postgresql/data
     networks:
-      - lab2_network
+      - lab_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   app:
     build: .
-    container_name: lab2_app
+    container_name: lab_app
     restart: unless-stopped
     depends_on:
       postgres:
@@ -31,14 +31,22 @@ services:
     env_file:
       - .env
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME}
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION}
+      CLIENT_ID: ${CLIENT_ID}
+      CLIENT_SECRET: ${CLIENT_SECRET}
+      CALLBACK_URL: ${CALLBACK_URL}
+      OAUTH_SUCCESS: ${OAUTH_SUCCESS}
     networks:
-      - lab2_network
+      - lab_network
 
 volumes:
-  lab2_postgres:
+  lab_postgres:
 
 networks:
-  lab2_network:
+  lab_network:
