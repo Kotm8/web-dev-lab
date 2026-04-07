@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AccessTokenRepository extends JpaRepository<AccessToken, UUID> {
+    Optional<AccessToken> findByTokenAndRevokedFalse(String token);
     @Modifying
     @Query("UPDATE AccessToken a SET a.revoked = true WHERE a.user = :user AND a.revoked = false")
     void revokeAllByUser(@Param("user") UserEntity user);
