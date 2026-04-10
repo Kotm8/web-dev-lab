@@ -4,7 +4,6 @@ import com.web.lab.common.JwtAuthFilter;
 import com.web.lab.user.repository.UserRepository;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
-import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -15,7 +14,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -48,9 +46,9 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService(UserRepository userRepository) {
-        return username -> userRepository.findByEmail(username)
+        return username -> userRepository.findByEmailAndDeletedFalse(username)
                 .map(user -> User.withUsername(user.getEmail())
-                        .password(user.getPassword())
+                        .password(user.getPassword() == null ? "" : user.getPassword())
                         .authorities("ROLE_" + user.getRole().name())
                         .build())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));

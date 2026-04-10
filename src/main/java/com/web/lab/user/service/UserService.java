@@ -1,9 +1,9 @@
 package com.web.lab.user.service;
 
-import com.web.lab.auth.dto.oauth.YandexUserInfoResponse;
 import com.web.lab.user.entity.Role;
 import com.web.lab.user.entity.UserEntity;
 import com.web.lab.user.repository.UserRepository;
+import com.web.lab.common.redis.RedisService;
 import com.web.lab.user.dto.*;
 import org.jspecify.annotations.NonNull;
 import org.springframework.data.domain.Page;
@@ -23,11 +23,14 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final RedisService redisService;
 
     public UserService(UserRepository userRepository,
-                       BCryptPasswordEncoder passwordEncoder) {
+                       BCryptPasswordEncoder passwordEncoder,
+                       RedisService redisService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.redisService = redisService;
     }
 
 
@@ -46,71 +49,10 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public UserRegisterResponse getByEmail(String email) {
-        UserEntity user = userRepository.findByEmailAndDeletedFalse(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
-        return returnUserRegisterResponse(user);
-    }
-
-    public UserRegisterResponse putByEmail(String email, UserPutRequest dto) {
-        UserEntity user = userRepository.findByEmailAndDeletedFalse(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
-        if (!user.getEmail().equals(dto.getEmail())
-                && userRepository.findByEmail(dto.getEmail()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
-        }
-
-        user.setEmail(dto.getEmail());
-        user.setUsername(dto.getUsername());
-        user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        user.setRole(dto.getRole());
-
-        UserEntity savedUser = userRepository.save(user);
-        return returnUserRegisterResponse(savedUser);
-    }
-
-    public UserRegisterResponse patchByEmail(String email, UserPatchRequest dto) {
-        UserEntity user = userRepository.findByEmailAndDeletedFalse(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
-
-        if (dto.getEmail() != null) {
-            Optional<UserEntity> existingUser = userRepository.findByEmail(dto.getEmail());
-            if (existingUser.isPresent() && !existingUser.get().getId().equals(user.getId())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
-            }
-            user.setEmail(dto.getEmail());
-        }
-
-        if (dto.getUsername() != null) {
-            user.setUsername(dto.getUsername());
-        }
-
-        if (dto.getPassword() != null) {
-            user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        }
-
-        if (dto.getRole() != null) {
-            user.setRole(dto.getRole());
-        }
-
-        UserEntity savedUser = userRepository.save(user);
-        return returnUserRegisterResponse(savedUser);
-    }
-
-    public void softDeleteByEmail(String email) {
-        UserEntity user = userRepository.findByEmailAndDeletedFalse(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
-        user.setDeleted(true);
-        userRepository.save(user);
-    }
-
     public UserRegisterResponse putUser(UUID id, UserPutRequest dto) {
         UserEntity user = userRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        String oldEmail = user.getEmail();
 
         if (!user.getEmail().equals(dto.getEmail())
                 && userRepository.findByEmail(dto.getEmail()).isPresent()) {
@@ -123,12 +65,15 @@ public class UserService {
         user.setRole(dto.getRole());
 
         UserEntity savedUser = userRepository.save(user);
+        evictWhoamiCache(oldEmail);
+        evictWhoamiCache(savedUser.getEmail());
         return returnUserRegisterResponse(savedUser);
     }
 
     public UserRegisterResponse patchUser(UUID id, UserPatchRequest dto) {
         UserEntity user = userRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        String oldEmail = user.getEmail();
 
         if (dto.getEmail() != null) {
             Optional<UserEntity> existingUser = userRepository.findByEmail(dto.getEmail());
@@ -151,6 +96,8 @@ public class UserService {
         }
 
         UserEntity savedUser = userRepository.save(user);
+        evictWhoamiCache(oldEmail);
+        evictWhoamiCache(savedUser.getEmail());
         return returnUserRegisterResponse(savedUser);
     }
 
@@ -160,6 +107,7 @@ public class UserService {
 
         user.setDeleted(true);
         userRepository.save(user);
+        evictWhoamiCache(user.getEmail());
     }
 
     public UserRegisterResponse getUser(UUID id) {
@@ -194,6 +142,10 @@ public class UserService {
 
     private UserRegisterResponse mapToDto(UserEntity user) {
         return returnUserRegisterResponse(user);
+    }
+
+    private void evictWhoamiCache(String email) {
+        redisService.delete(String.format("lab:auth:user:%s:profile", email));
     }
 
     public Optional<UserEntity> findByEmail(String email) {

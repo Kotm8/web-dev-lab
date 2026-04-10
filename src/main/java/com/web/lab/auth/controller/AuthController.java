@@ -8,7 +8,6 @@ import com.web.lab.auth.service.AuthService;
 import com.web.lab.auth.dto.AuthRegisterRequest;
 import com.web.lab.auth.service.OAuthService;
 import com.web.lab.common.CookieUtils;
-import com.web.lab.user.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,11 +41,12 @@ public class AuthController {
     @Operation(summary = "Register a new user", description = "Creates a new user account")
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody AuthRegisterRequest dto,
+                                                 HttpServletRequest request,
                                                  HttpServletResponse response) {
         AuthResponse authResponse = authService.register(dto);
 
-        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token());
-        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token());
+        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token(), request.isSecure());
+        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token(), request.isSecure());
 
         return ResponseEntity.ok(authResponse);
     }
@@ -54,11 +54,12 @@ public class AuthController {
     @Operation(summary = "Login a new user", description = "Login a user with jwt token")
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthLoginRequest dto,
+                                              HttpServletRequest request,
                                               HttpServletResponse response) {
         AuthResponse authResponse = authService.login(dto);
 
-        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token()   );
-        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token());
+        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token(), request.isSecure());
+        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token(), request.isSecure());
 
         return ResponseEntity.ok(authResponse);
     }
@@ -76,8 +77,8 @@ public class AuthController {
 
         AuthResponse authResponse = authService.refresh(refreshToken);
 
-        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token());
-        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token());
+        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token(), request.isSecure());
+        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token(), request.isSecure());
 
         return ResponseEntity.ok(authResponse);
     }
@@ -97,8 +98,8 @@ public class AuthController {
 
         authService.logout(refreshToken);
 
-        CookieUtils.clearCookie(response, "accessToken");
-        CookieUtils.clearCookie(response, "refreshToken");
+        CookieUtils.clearCookie(response, "accessToken", request.isSecure());
+        CookieUtils.clearCookie(response, "refreshToken", request.isSecure());
     }
 
     @Operation(summary = "Log user sessions out", description = "Revoke all sessions")
@@ -116,8 +117,8 @@ public class AuthController {
 
         authService.logoutAll(refreshToken);
 
-        CookieUtils.clearCookie(response, "accessToken");
-        CookieUtils.clearCookie(response, "refreshToken");
+        CookieUtils.clearCookie(response, "accessToken", request.isSecure());
+        CookieUtils.clearCookie(response, "refreshToken", request.isSecure());
     }
 
 
@@ -125,9 +126,10 @@ public class AuthController {
     @GetMapping("/oauth/{provider}")
     public void oauthInit(
             @PathVariable String provider,
+            HttpServletRequest request,
             HttpServletResponse response
     ) throws IOException {
-        String redirectUrl = oAuthService.buildAuthorizationUrl(provider, response);
+        String redirectUrl = oAuthService.buildAuthorizationUrl(provider, request, response);
         response.sendRedirect(redirectUrl);
     }
 
@@ -142,8 +144,8 @@ public class AuthController {
     ) throws IOException {
         AuthResponse authResponse = oAuthService.handleCallback(provider, code, state, request, response);
 
-        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token());
-        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token());
+        CookieUtils.addAccessTokenCookie(response, authResponse.getAccess_token(), request.isSecure());
+        CookieUtils.addRefreshTokenCookie(response, authResponse.getRefresh_token(), request.isSecure());
 
         response.sendRedirect(frontendSuccessUrl);
     }

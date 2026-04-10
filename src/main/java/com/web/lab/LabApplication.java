@@ -8,8 +8,15 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class LabApplication {
 
 	public static void main(String[] args) {
-		Dotenv dotenv = Dotenv.load();
-		dotenv.entries().forEach(e -> System.setProperty(e.getKey(), e.getValue()));
+		Dotenv dotenv = Dotenv.configure()
+				.ignoreIfMalformed()
+				.ignoreIfMissing()
+				.load();
+		dotenv.entries().forEach(e -> {
+			if (System.getProperty(e.getKey()) == null && System.getenv(e.getKey()) == null) {
+				System.setProperty(e.getKey(), e.getValue());
+			}
+		});
 		SpringApplication.run(LabApplication.class, args);
 	}
 

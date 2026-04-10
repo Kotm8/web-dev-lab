@@ -1,0 +1,10 @@
+CREATE TABLE posts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    created_by UUID NOT NULL,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_posts_created_by_user
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+);

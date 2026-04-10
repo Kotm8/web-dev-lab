@@ -4,26 +4,22 @@ import com.web.lab.Jwt.JwtService;
 import com.web.lab.Jwt.entity.AccessToken;
 import com.web.lab.Jwt.repository.AccessTokenRepository;
 import com.web.lab.common.redis.RedisService;
+import com.web.lab.user.entity.UserEntity;
+import com.web.lab.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
@@ -31,11 +27,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final RedisService redisService;
     private final AccessTokenRepository accessTokenRepository;
+    private final UserRepository userRepository;
 
-    public JwtAuthFilter(JwtService jwtService, RedisService redisService, AccessTokenRepository accessTokenRepository) {
+    public JwtAuthFilter(
+            JwtService jwtService,
+            RedisService redisService,
+            AccessTokenRepository accessTokenRepository,
+            UserRepository userRepository
+    ) {
         this.jwtService = jwtService;
         this.redisService = redisService;
         this.accessTokenRepository = accessTokenRepository;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -70,29 +73,29 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             JwtService.AccessTokenClaims claims = jwtService.extractAccessClaims(token);
             String email = claims.email();
             String jti = claims.jti();
-            String role = claims.role();
 
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                String stored = redisService.get(String.format("wp:auth:user:%s:access:jti", email));
+                UserEntity user = userRepository.findByEmailAndDeletedFalse(email)
+                        .orElseThrow(() -> new RuntimeException("User not found"));
+                String stored = redisService.get(String.format("lab:auth:user:%s:access:jti", email));
 
-                if (stored != null && stored.equals(jti)) {
-                    // cache hit
-                    List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(role));
-                    UsernamePasswordAuthenticationToken auth =
-                            new UsernamePasswordAuthenticationToken(email, null, authorities);
-                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+                if (stored != null) {
+                    if (!stored.equals(jti)) {
+                        throw new RuntimeException("Invalid Access token");
+                    }
+
+                    SecurityContextHolder.getContext().setAuthentication(buildAuthentication(request, user));
                 } else {
-                    // cache miss fallback to DB
                     AccessToken tokenEntity = accessTokenRepository
                             .findByTokenAndRevokedFalse(token)
                             .orElseThrow(() -> new RuntimeException("Invalid Access token"));
 
+                    if (!tokenEntity.getUser().getId().equals(user.getId())) {
+                        throw new RuntimeException("Invalid Access token");
+                    }
+
                     jwtService.saveToJtiToRedis(email, jti);
-                    List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(role));
-                    UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(email, null, authorities);
-                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+                    SecurityContextHolder.getContext().setAuthentication(buildAuthentication(request, user));
                 }
             }
         } catch (Exception e) {
@@ -100,6 +103,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private UsernamePasswordAuthenticationToken buildAuthentication(HttpServletRequest request, UserEntity user) {
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(user.getEmail(), null, authorities);
+        auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        return auth;
     }
 
 }

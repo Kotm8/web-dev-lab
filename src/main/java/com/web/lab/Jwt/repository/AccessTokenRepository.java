@@ -1,7 +1,6 @@
 package com.web.lab.Jwt.repository;
 
 import com.web.lab.Jwt.entity.AccessToken;
-import com.web.lab.Jwt.entity.RefreshToken;
 import com.web.lab.user.entity.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;

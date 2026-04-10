@@ -2,22 +2,16 @@ package com.web.lab.auth.service;
 
 
 import com.web.lab.Jwt.JwtService;
-import com.web.lab.Jwt.repository.AccessTokenRepository;
-import com.web.lab.Jwt.repository.RefreshTokenRepository;
 import com.web.lab.auth.dto.AuthResponse;
 import com.web.lab.auth.dto.oauth.YandexTokenResponse;
 import com.web.lab.auth.dto.oauth.YandexUserInfoResponse;
 import com.web.lab.common.CookieUtils;
 import com.web.lab.user.entity.UserEntity;
 import com.web.lab.user.repository.UserRepository;
-import com.web.lab.user.service.UserService;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -46,9 +40,6 @@ public class OAuthServiceImpl implements OAuthService {
     @Value("${jwt.oauth.callback_url}")
     private String callbackUrl;
 
-    @Value("${app.frontend.oauth-success-url}")
-    private String frontendSuccessUrl;
-
     public OAuthServiceImpl(UserRepository userRepository,
                        JwtService jwtService) {
         this.userRepository = userRepository;
@@ -56,18 +47,12 @@ public class OAuthServiceImpl implements OAuthService {
     }
 
     @Override
-    public String buildAuthorizationUrl(String provider, HttpServletResponse response) {
+    public String buildAuthorizationUrl(String provider, HttpServletRequest request, HttpServletResponse response) {
         validateProvider(provider);
 
         String state = UUID.randomUUID().toString();
 
-        Cookie cookie = new Cookie("oauth_state", state);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(false);
-        cookie.setPath("/");
-        cookie.setMaxAge(300);
-
-        response.addCookie(cookie);
+        CookieUtils.addOauthStateCookie(response, state, request.isSecure());
 
         return UriComponentsBuilder
                 .fromUriString("https://oauth.yandex.ru/authorize")
@@ -90,7 +75,7 @@ public class OAuthServiceImpl implements OAuthService {
             throw new ResponseStatusException(UNAUTHORIZED, "Invalid OAuth state");
         }
 
-        CookieUtils.clearCookie(response, "oauth_state");
+        CookieUtils.clearCookie(response, "oauth_state", request.isSecure());
 
         YandexTokenResponse tokenResponse = exchangeCodeForToken(code);
         if (tokenResponse == null || tokenResponse.accessToken() == null) {
@@ -108,6 +93,7 @@ public class OAuthServiceImpl implements OAuthService {
         }
 
         UserEntity user = findOrCreateUser(yandexUser);
+        jwtService.revokeUserSessions(user);
 
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
@@ -148,6 +134,10 @@ public class OAuthServiceImpl implements OAuthService {
     private UserEntity findOrCreateUser(YandexUserInfoResponse yandexUser) {
         Optional<UserEntity> existing = userRepository.findByEmail(yandexUser.defaultEmail());
         if (existing.isPresent()) {
+            if (Boolean.TRUE.equals(existing.get().getDeleted())) {
+                throw new ResponseStatusException(UNAUTHORIZED, "User account is disabled");
+            }
+
             return existing.get();
         }
 

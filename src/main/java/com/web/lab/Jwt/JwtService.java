@@ -9,6 +9,7 @@ import com.web.lab.user.entity.UserEntity;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -45,15 +46,31 @@ public class JwtService {
     private SecretKey getSigningKey(String secret) {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
+    private String generateAuthKey(String email) {
+        return String.format("lab:auth:user:%s:access:jti", email);
+    }
+
+    public void deleteAccessJti(String email) {
+        redisService.delete(generateAuthKey(email));
+    }
+
     public void saveToJtiToRedis(String email, String jti) {
-        redisService.save(String.format("wp:auth:user:%s:access:jti", email), jti, access_secret_expiration, TimeUnit.MILLISECONDS);
+        redisService.save(generateAuthKey(email), jti, access_secret_expiration, TimeUnit.MILLISECONDS);
 
     }
+
+    @Transactional
+    public void revokeUserSessions(UserEntity user) {
+        refreshTokenRepository.revokeAllByUser(user);
+        accessTokenRepository.revokeAllByUser(user);
+        deleteAccessJti(user.getEmail());
+    }
+
     public String generateAccessToken(UserEntity user) {
         String jti = UUID.randomUUID().toString();
         String token =  Jwts.builder()
                 .subject(user.getEmail())
-                .claim("role", user.getRole())
+                .claim("role", user.getRole().name())
                 .id(jti)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + access_secret_expiration))
@@ -72,7 +89,7 @@ public class JwtService {
     public String generateRefreshToken(UserEntity user) {
         String token = Jwts.builder()
                         .subject(user.getEmail())
-                        .claim("role", user.getRole())
+                        .claim("role", user.getRole().name())
                         .issuedAt(new Date())
                         .expiration(new Date(System.currentTimeMillis() + refresh_secret_expiration))
                         .signWith(getSigningKey(refresh_secret))

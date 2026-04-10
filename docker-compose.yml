@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     container_name: lab_db
     restart: unless-stopped
     environment:
@@ -10,11 +10,28 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - lab_postgres:/var/lib/postgresql/data
+      - lab_postgres:/var/lib/postgresql
     networks:
       - lab_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lab_redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - lab_redis:/data
+    networks:
+      - lab_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,6 +42,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -42,11 +61,16 @@ services:
       CLIENT_SECRET: ${CLIENT_SECRET}
       CALLBACK_URL: ${CALLBACK_URL}
       OAUTH_SUCCESS: ${OAUTH_SUCCESS}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CACHE_TTL_DEFAULT: ${CACHE_TTL_DEFAULT}
     networks:
       - lab_network
 
 volumes:
   lab_postgres:
+  lab_redis:
 
 networks:
   lab_network:
